@@ -1,0 +1,786 @@
+---
+title: "Proyecto COVID-19: casos positivos de la población mexicana"
+author: "Carlos Eduardo Salinas Díaz"
+date: "25/12/22"
+output: html_document
+---
+
+<h1> COVID19 en México </h1>
+
+<ol> Indice general 
+  <li> Introducción </li>
+  <li> Procesamiento de datos </li>
+  <li> Análisis y visualización de los datos </li>
+  <li> Estimación de probabilidades </li>
+  <li> Conclusión </li>
+</ol>
+
+<h3> 1. Introducción </h3>
+
+<p> La presente investigación tiene por objetivo evaluar y analizar estadísticamente los casos COVID-19 entre la población mexicana. Con avaluar y analizar estadísticamente significa la cuantificación, con herramientas estadísticas, de pacientes positivos (mujeres y hombres), ponderando, de manera particular, en aquellos que son fumadores, diagnosticados en diabetes y que requirieron intubación durante su instancia hospitalaria. Esto con el fin de evaluar la probabilidad de mortalidad cuando el paciente fuése sano o no, si fue intubado o no y si el paciente era mujer u hombre.  </p> <br>
+
+<p> La base de datos que se utilizó para el presente proyecto es de fuente abierta, misma que fue proporcionada por la Secretaría de Salud del Gobierno Federal de México. Dicha entidad puso a disposición a la población mexicana las los datos de pacientes hospitalizados positivos por COVID-19 de las 32 entidades que comprenden la Républica Mexicana. Cabe mencionar que la base de datos analizda para este proyecto, comprende los registros de los pacientes antes de la vacunación, esto con motivo de poder analizar el comportamiento de la viruluencia en la población sin el apoyo al sistema inumológico que ofrecen las vacunas. La base se datos, como se mencionó, es de fuente abierta, la cual puede ser consultada en el siguiente <A HREF= "https://datos.gob.mx/busca/dataset/informacion-referente-a-casos-covid-19-en-mexico">link</A>.</p>
+
+<h3> 2. Procesamiento de los datos </h3>
+
+<h4> Instalación de librerías</h4>
+
+```{r} 
+libraries <- c("ggplot2", "dplyr", "readr", "magrittr", "tidyverse", "stringr", "plotly")
+sapply(libraries, require, character.only = TRUE)
+```
+
+```{r}
+setwd("E:/Proyecto_CVD19")
+```
+
+<p> Carga de los datos </p>
+
+```{r}
+dataframe <- read.csv("COVID19MEXICO.csv")
+```
+
+<p> Se hace una visualización de los datos para observar posibles anomalías y, de ser el caso, poder hacer la etapa de limpieza y preparación de los mismos. </p>
+
+```{r}
+head(dataframe)
+```
+
+
+<p> Dado que la base de datos es significativamente grande, y con el fin de facilitar el procesamiento de los datos, se obtiene una muestra aleatoria de 500,000 datos de la base original. </p>
+
+```{r}
+dataframe <- sample_n(dataframe, size = 500000, replace = T)
+```
+
+<p> Como se mencionó en la intriducción, son de interés aquellos pacientes que dieron positivo por COVID-19, de modo que, se filtran de la columna <em>CLASIFICACION_FINAL</em> sólo aquellos pacientes cuyos valores sean 1, 2 ó 3, que corresponden a la clasificación final por positivos por COVID-19. Asimismo, se asigna el nombre de <em>casos_positivos</em> al data frame.</p>
+
+```{r}
+casos_positivos <- dataframe %>% 
+  filter(CLASIFICACION_FINAL == 1 | CLASIFICACION_FINAL == 2 | CLASIFICACION_FINAL == 3)
+```
+
+<p> Ahora, se asigna el nombre <em>POSITIVOS</em> en lugar de <em>CLASIFICACION_FINAL</em>, ya que es un nombre más conviente para los fines del presente.</p>
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  rename(POSITIVOS = CLASIFICACION_FINAL)
+```
+
+<p> Se valida la corrección de los datos en la columna <em>POSITIVOS</em>.</p>
+
+```{r}
+sample(casos_positivos$POSITIVOS, 10)
+```
+
+<p> Se estandarizan los datos de la columna <em>POSITIVOS</em> a un único valor: 1 </p>
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  transform(POSITIVOS = ifelse(POSITIVOS != 1, 1, 1))
+```
+
+
+<p> Siguiendo con el proceso de preparación de los datos, se obtiene el número de valores nulos, esto con el fin de poder hacer las implementaciones necesarias según sean requeridas.</p>
+
+```{r}
+apply(casos_positivos, 2, function(x) round(mean(is.na(x)),2))
+```
+```{r}
+head(casos_positivos$FECHA_DEF)
+```
+
+<p> Si bien la estimación promedio de datos nulos es 0, al visualizar los datos que conforman a la columna <em>FECHA_DEF</em>, una gran coantidad de ellos tienen como valor "9999-99-99", esto debido a que no todos los pacientes positivos fallecieron, por lo que resulta conveniente crear una nueva columna en la que se especifique si el paciente falleció o no. Así, se asigna el valor 1 para aquellos que sí y el valor 2 para aquellos que no. </p> 
+
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  mutate(DEFUNCION = ifelse((FECHA_DEF=="9999-99-99"),2, 1))
+```
+
+<p> Se procede a modificar la variable <em>ENTIDAD_RES</em> asignandóle el nombre de cada Estado con base en el cátalogo de los datos proporcionado por la Secreataría de Salud. </p>
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  transform(ENTIDAD_RES = case_when(
+  ENTIDAD_RES == 1 ~ "Aguascalientes", 
+  ENTIDAD_RES == 2 ~ "Baja California", 
+  ENTIDAD_RES == 3 ~ "Baja California Sur",
+  ENTIDAD_RES == 4 ~ "Campeche",
+  ENTIDAD_RES == 5 ~ "Coahuila",
+  ENTIDAD_RES == 6 ~ "Colima",
+  ENTIDAD_RES == 7 ~ "Chiapas", 
+  ENTIDAD_RES == 8 ~ "Chihuahua",
+  ENTIDAD_RES == 9 ~ "CDMX", 
+  ENTIDAD_RES == 10 ~ "Durango", 
+  ENTIDAD_RES == 11 ~ "Guanajuato",
+  ENTIDAD_RES == 12 ~ "Guerrero",
+  ENTIDAD_RES == 13 ~ "Hidalgo",
+  ENTIDAD_RES == 14 ~ "Jalisco", 
+  ENTIDAD_RES == 15 ~ "México",
+  ENTIDAD_RES == 16 ~ "Michoacán",
+  ENTIDAD_RES == 17 ~ "Morelos",
+  ENTIDAD_RES == 18 ~ "Nayarit",
+  ENTIDAD_RES == 19 ~ "Nuevo León",
+  ENTIDAD_RES == 20 ~ "Oaxaca",
+  ENTIDAD_RES == 21 ~ "Puebla",
+  ENTIDAD_RES == 22 ~ "Querétaro",
+  ENTIDAD_RES == 23 ~ "Quintana Roo",
+  ENTIDAD_RES == 24 ~ "San Luis Potosí",
+  ENTIDAD_RES == 25 ~ "Sinaloa",
+  ENTIDAD_RES == 26 ~ "Sonora",
+  ENTIDAD_RES == 27 ~ "Tabasco",
+  ENTIDAD_RES == 28 ~ "Tamaulipas",
+  ENTIDAD_RES == 29 ~ "Tlaxcala",
+  ENTIDAD_RES == 30 ~ "Veracruz",
+  ENTIDAD_RES == 31 ~ "Yucatán",
+  ENTIDAD_RES == 32 ~ "Zacatecas",
+  T ~ "Sin especificar"    
+))
+```
+
+<p> Análogamente, se procede a modificar los valores para la columna <em>SEXO</em>, siendo "Mujer" para el valor 1, "Hombre" para el valor 2  y "Sin especificar" cuando no sea ninguno de los anteriores. </p>
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  transform(SEXO = case_when(
+  SEXO == 1 ~ "Mujer",
+  SEXO == 2 ~ "Hombre",
+  T ~ "Sin especificar"
+))
+```
+
+<p> Dado que los própositos del proyecto se centran en el análsis estadístico de los pacientes postivos por COVID-19, se seleccionan únicamente aquellas variables que resulten de interés para el alcance de dichos propósitos.</p> <br> 
+
+<p> Obtención de los nombres de las columnas.</p>
+
+```{r}
+colnames(casos_positivos)
+```
+
+<p> Selección de las variables de interés: </p>
+
+```{r}
+casos_positivos <- casos_positivos %>% 
+  select(POSITIVOS,
+         SEXO,
+         ENTIDAD_RES,
+         INTUBADO,
+         NEUMONIA,
+         EDAD,
+         DIABETES,
+         TABAQUISMO,
+         PAIS_NACIONALIDAD,
+         DEFUNCION)
+```
+
+<p> Se contabliza el promedio de datos nulos en la base de datos ya procesada. </p>
+
+```{r}
+apply(casos_positivos, 2, function(x) round(mean(is.na(x)),2))
+```
+
+<p> Consultado la columna <em>PAIS_NACIONALIDAD</em>, se puede observar un error ortográfico para el nombre de México, por lo que es necesario su corrección. </p>
+
+```{r}
+sample(casos_positivos$PAIS_NACIONALIDAD, 10)
+```
+
+<p> Corrección de los valores. </p>
+
+```{r}
+casos_positivos$PAIS_NACIONALIDAD <- str_replace(casos_positivos$PAIS_NACIONALIDAD, "MÃ©xico","México")
+```
+
+<p> Validación de la correción de los datos de la columna <em>PAIS_NACIONALIDAD</em>.</p>
+
+```{r}
+sample(casos_positivos$PAIS_NACIONALIDAD,10)
+```
+
+
+<p> Siguiendo los lineamentos del proyecto, se filtran aquellos pacientes cuya nacionalidad sea mexicana.</p>
+
+
+```{r}
+Positivos_Mexico <- casos_positivos %>% 
+  filter(casos_positivos$PAIS_NACIONALIDAD == "México")
+```
+
+<p> Visualización de la corrección de datos. </p>
+
+```{r}
+head(Positivos_Mexico)
+```
+
+<p> Para segurar que la selección de datos de interés se hizo satisfactoriamente, se filtran valores de cada columna y con ello eliminar los datos faltates. </p>
+
+```{r}
+Positivos_Mexico <- Positivos_Mexico %>% 
+  filter(Positivos_Mexico$SEXO == "Hombre" | Positivos_Mexico$SEXO == "Mujer", 
+         Positivos_Mexico$INTUBADO == 1 | Positivos_Mexico$INTUBADO == 2, 
+         Positivos_Mexico$NEUMONIA == 1 | Positivos_Mexico$NEUMONIA ==2, 
+         Positivos_Mexico$DIABETES == 1 | Positivos_Mexico$DIABETES ==2, 
+         Positivos_Mexico$TABAQUISMO == 1 | Positivos_Mexico$TABAQUISMO ==2)
+
+head(Positivos_Mexico)
+```
+
+<p> Una vez concluido con el procesamiento de los datos, se procede al análisis de los mismos. </p>
+
+<h3> Análisis y visualización de los datos </h3>
+
+<p> Se obtienen los Estados de la República Mexicana con el mayor índice de casos positivos por COVID-19.</p>
+
+```{r}
+CasosPorEstado <- Positivos_Mexico %>% 
+  group_by(ENTIDAD_RES) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+
+CasosPorEstado
+```
+<p> Los Entidades federativas con el mayor número de contagios son procedentes del Estado de México y la CDMX. La siguiente gráfica muestra la distribución de los casos por COVID-19 de las primeras diez entidades. </p>
+
+```{r}
+width <- c(0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8)
+
+plot_ly(CasosPorEstado) %>% 
+  add_bars(x = ~conteo, 
+           y = ~ENTIDAD_RES, 
+           width = ~width, 
+           orientation = 'h') %>%
+  layout(title = "Estados con mayor índice de contagios por COVID-19",
+         xaxis = list(title = "Conteo"),
+         yaxis = list(title = ""))
+```
+
+<p> Conteo de casos por género en cada Estado. </p>
+
+```{r}
+CasosPorEdoGenero <- Positivos_Mexico %>% 
+  group_by(ENTIDAD_RES, SEXO) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo))
+
+head(CasosPorEdoGenero,10)
+```
+<p>Asimismo, se muestra los pacientes positivos por COVID-19 entre mujeres y hombres de las distintas entidades de la República. </p>
+
+```{r}
+plot_ly(CasosPorEdoGenero) %>% 
+  add_bars(x = ~ENTIDAD_RES, 
+           y = ~conteo, 
+           color = ~SEXO) %>%
+  layout(title = "Número de contagios por mujeres y hombres de cada Estado",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Conteo"))
+```
+
+<p> Se obtiene el número de casos positivos por COVID-19 entre mujeres y hombres. </p>
+
+```{r}
+Positivos_Mexico %>% 
+  count(SEXO) %>%
+  plot_ly( x = ~SEXO, 
+           y=~n, 
+           type = 'bar', 
+           text = ~n, 
+           textposition = 'auto',
+           marker = list(color = 'rgb(158,202,225)',
+                         line = list(color = 'rgb(8,48,107)',
+                                     width = 1.5))) %>%
+  layout(title = "Casos positvos de mujeres y hombres",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Conteo"))
+```
+
+<p> Se observa claramente que el número de hombres positivos por COVID-19 es significativamente mayor para hombres respecto de las mujeres. Enseguida, se visualiza el número de de defunciones entre mujeres y hombres. </p>
+
+```{r}
+Positivos_Mexico %>%  
+  filter(DEFUNCION == 1) %>% 
+  count(SEXO) %>%
+  plot_ly( x = ~SEXO, 
+           y=~n, 
+           type = 'bar', 
+           text = ~n, 
+           textposition = 'auto',
+           marker = list(color = 'rgb(158,202,225)',
+                         line = list(color = 'rgb(8,48,107)',
+                                     width = 1.5))) %>%
+  layout(title = "Número de defunciones mujeres y hombres",
+         xaxis = list(title = ""),
+         yaxis = list(title = "Conteo"))
+```
+
+<p> Nuevamente, el número de defunciones es significativamente mayor para el caso hombres que el de mujeres. Un pregunta de interés es ver por qué sucede esta tendencia, es decir, ¿cuáles serían los factores que intervienen a que el número de fallacimientos de hombres sea mayor que al de las mujeres? </p><br>
+
+<p> A continuación se analiza cómo se distribuye los casos positivos por edad. </p>
+
+```{r}
+ggplot(Positivos_Mexico, aes(x= EDAD)) + 
+  geom_density(color = "#15CFB5",
+             fill = 4,
+             alpha = 0.25) +
+  labs(title = "Gráfico de densidad de contiagados por edades de la poblacion", 
+       x = "Edad", 
+       y="Conteo")
+```
+<p> Enseguida, se estima la media de las edades de los positivos por COVID-19, para el caso general y, para el caso particular, se obtiene la media de las edades entre mujeres y hombres. </p> <br>
+
+<p> Edad promedio de los pacientes positivos a COVID-19. </p>
+
+```{r}
+EdadPromedio <- round(mean(Positivos_Mexico$EDAD),0)
+paste("La edad promedio de los pacientes a COVID-19 es de: ", EdadPromedio, "años.")
+```
+<p> Edad promedio de mujeres positivas por COVID-19. </p>
+
+```{r}
+PositivoMujeres <- Positivos_Mexico %>% 
+  filter(SEXO == 'Mujer')
+
+EdadPromedioMujer <- round(mean(PositivoMujeres$EDAD), 0)
+paste("La edad promedio de mujeres positivas a COVID-19 es de: ", EdadPromedioMujer, "años")
+```
+<p> Edad promedio de hombres positivos por COVID-19.</p>
+
+```{r}
+PositivoHombres <- Positivos_Mexico %>% 
+  filter(SEXO == 'Hombre')
+
+EdadPromedioHombre <- round(mean(PositivoHombres$EDAD), 0)
+paste("La edad promedio de hombres positivos a COVID-19 es de: ", EdadPromedioHombre, "años")
+```
+<p> La siguiente gráfica muestra la distribución las edades de mujeres y hombres contagiados COVID-19. </p>
+
+```{r}
+ggplot(Positivos_Mexico, 
+       aes(x = EDAD, 
+           colour = SEXO, 
+           fill = SEXO )) + 
+  geom_density() + 
+  labs(title = "Densidad de las edades de los contagiados por género", 
+       x = "Edad", 
+       y="")
+```
+<p> Ahora, se obtiene el conteo de valores positivos por edades en general, y de manera particular, se contabiliza las edades entre mujeres y hombres. </p><br>
+
+<p> Conteo de las edades de los pacientes contagiados por COVID-19. </p>
+
+```{r}
+ Positivos_Mexico %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>%
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> Conteo de las edades de mujeres contagiadas por COVID-19. </p>
+
+```{r}
+PositivoMujeres %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> Conteo de las edades de hombres contagiados por COVID-19. </p>
+
+```{r}
+PositivoHombres %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> El siguiente boxplot muestra cómo se distribuye las edades de aquellos que dieron positvo por COVID-19. </p>
+
+```{r}
+ Positivos_Mexico %>% 
+  ggplot(aes(x=SEXO, 
+             y=EDAD, 
+             fill=SEXO)) +
+  geom_boxplot(width = 0.5) + 
+  theme(
+    legend.position="none", 
+    plot.title = element_text(size=11)) +
+    ggtitle("Boxplot de las edades de hombres y mujeres positivos por COVID-19") +
+    xlab("")
+```
+
+
+<p> Procediendo de manera análoga a los pasos anteriores, se obtiene la edad promedio de fallecimientos por COVID-19 para ambos géneros y, asimismo, se obtiene la edad promedio de los fallecimientos de mujeres y de hombres de menera separada. </p>
+
+<p> Edad promedio de los pacientes que fallecieron por COVID-19. </p>
+
+```{r}
+PacientesFallecidos <- Positivos_Mexico %>% 
+  filter(DEFUNCION == 1)
+
+EdadPromedioFallecidos <- round(mean(PacientesFallecidos$EDAD),0)
+paste("La edad promedio de los pacientes que fallecieron por COVID-19 es de: ", 
+      EdadPromedioFallecidos, "años.")
+```
+
+<p> Edad promedio de mujeres que fallecieron por causa COVID-19. </p>
+
+```{r}
+MujeresFallecidas <- Positivos_Mexico %>% 
+  filter(SEXO == 'Mujer')
+
+EdadPromMujerFallecida <- round(mean(PositivoHombres$EDAD), 0)
+paste("La edad promedio de mujeres que fallecieron por causa COVID-19 es de: ", 
+      EdadPromMujerFallecida, "años.")
+```
+
+<p> Edad promedio de hombres que fallecieron por causa COVID-19. </p>
+
+```{r}
+HombresFallecidos <- Positivos_Mexico %>% 
+  filter(SEXO == 'Hombre')
+
+EdadPromHomFallecido <- round(mean(PositivoHombres$EDAD), 0)
+paste("La edad promedio de hombres que fallecieron por causa COVID-19 es de: ",
+      EdadPromHomFallecido, "años.")
+```
+
+<p> Conteo por edades de pacientes que murieron por COVID-19. </p>
+
+```{r}
+Positivos_Mexico %>% 
+  filter(DEFUNCION == 1) %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> Conteo de las edades de las mujeres que fallecieron por COVID-19. </p>
+
+```{r}
+PositivoMujeres %>% 
+  filter(DEFUNCION == 1) %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>%
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> Conteo de las edades de los hombres que fallecieron por COVID-19.  </p>
+
+```{r}
+PositivoHombres %>% 
+  filter(DEFUNCION == 1) %>% 
+  group_by(EDAD) %>% 
+  summarize(conteo = n()) %>% 
+  arrange(desc(conteo)) %>% 
+  top_n(10)
+```
+
+<p> La siguiente gráfica sintetiza la distribución de los fallecimientos por edades. </p>
+
+```{r}
+Defunciones <- Positivos_Mexico %>% 
+  select(EDAD, DEFUNCION, SEXO) %>% 
+  filter(DEFUNCION == 1)
+
+ggplot(Defunciones, 
+       aes(x = EDAD, 
+           fill= SEXO, 
+           colour = SEXO)) +
+  geom_histogram(alpha = 0.5, 
+                 position = "dodge") + 
+  labs(title = "Histograma de mujeres y hombres que fallecieron por COVID-19 ", 
+       x = "EDAD", 
+       y = "Conteo")
+```
+<p> Se representa, mediante el siguiente boxplot, las edades de aquellos pacientes que fallecieron a causa de la viriluencia. </p>
+
+```{r}
+Defunciones %>% 
+  ggplot( aes(x=SEXO, 
+              y=EDAD, 
+              fill=SEXO)) +
+  geom_violin(width=1) + 
+  geom_boxplot() +
+  theme(
+    legend.position="none", 
+    plot.title = element_text(size=12)) +
+    ggtitle("Boxplot de las edades de los fallecimientos por causa COVID-19") +
+    xlab("")
+```
+
+<p> El siguiente gráfico muestra el conteo de hombres y mujeres fumadores y no fumadores, donde el valor 1 corresponde para el caso afirmativo y 2 el caso negativo. </p>
+
+```{r}
+Positivos_Mexico %>% 
+  count(SEXO, TABAQUISMO) %>% 
+  plot_ly(x = ~SEXO, 
+          y= ~n, 
+          color = ~TABAQUISMO) %>% 
+  add_bars() %>% 
+  layout(title = "Conteo de fumadores y no fumadores por género", 
+         x = "Sexo", 
+         y = "Conteo") %>% 
+  layout(barmode ="stack")
+```
+
+<p> Las siguientes dos gráficas muestran aquellos pacientes diagnosticados con o sin diabetes, y pacientes que requirieron o no intubación durante su instancia hospotalaria, respectivamente.</p> <br>
+
+<p><b>Nota</b> Se aplican los mismos valores: 1 para el caso positivo y 2 para el negativo. </p>
+
+```{r}
+Positivos_Mexico %>% 
+  count(SEXO, DIABETES) %>% 
+  plot_ly(x = ~SEXO, 
+          y= ~n, 
+          color = ~DIABETES) %>% 
+  add_bars() %>%
+  layout(title = "Conteo de hombres y mujeres con diabetes ") %>% 
+  layout(barmode ="stack")
+```
+
+
+```{r}
+Positivos_Mexico %>% 
+  count(SEXO, INTUBADO) %>% 
+  plot_ly(x = ~SEXO, 
+          y= ~n, 
+          color = ~INTUBADO) %>% 
+  add_bars() %>%
+  layout(title = "Conteo de hombres y mujeres que fueron intubadas") %>% 
+  layout(barmode ="stack")
+```
+
+<p> El siguiente gráfico resumé la información de las gráficas anteriores. </p>
+
+```{r}
+FallecidoTabaNeumIntu <- Positivos_Mexico %>% 
+  filter(TABAQUISMO == 1 | NEUMONIA ==1, 
+         INTUBADO  == 1,
+         SEXO == 'Hombre' | SEXO == 'Mujer', 
+         DEFUNCION == 1)
+
+plot_ly(FallecidoTabaNeumIntu, 
+        x = ~SEXO, 
+        y = ~TABAQUISMO, 
+        z = ~INTUBADO,
+        type = 'bar', 
+        name = 'Tabaquismo') %>%
+  add_trace(y = ~NEUMONIA,
+            name = 'Neumonía') %>% 
+  add_trace(z = ~INTUBADO, 
+            name = 'Intubado') %>% 
+  layout(yaxis = list(title = 'Conteo'), 
+         barmode = 'group')
+```
+
+<p> Como se muestran en la gráfica anterior, un número considerable de pacientes que fallecieron, eran fumandores y fueron intubados, siendo más pronunciado  para el caso de los hombres. A continuación se contabiliza el número de pacientes fumadores que fueron intubados que están por debajo y por arriba del promedio de edad que se estimó anteriormente y se denotó con el nombre de <em>EdadPromedioFallecidos</em>. </p><br>
+
+<p> Pacientes fumandores e intubados que se encuentran por debajo del promedio de edad de fallecidos por COVID-19. </p>
+
+```{r}
+DecesosTabacoIntubado <- Positivos_Mexico %>% 
+  filter(TABAQUISMO == 1 | INTUBADO ==1, 
+         SEXO == 'Hombre' | SEXO == 'Mujer', 
+         DEFUNCION == 1, 
+         EDAD <= EdadPromedioFallecidos)
+
+plot_ly(DecesosTabacoIntubado, 
+        x = ~SEXO, 
+        y = ~TABAQUISMO, 
+        type = 'bar', 
+        name = 'Tabaquismo') %>%
+  add_trace(y = ~INTUBADO, 
+            name = 'Intubado') %>% 
+  layout(yaxis = list(title = 'Conteo'), 
+         barmode = 'group')
+```
+
+<p> La siguiente gráfica contabiliza a los pacientes fumadores y que fueron intubados que se encuentran por arriba de la edad promedio. </p>
+
+```{r}
+DecesosTabacoIntubado <- Positivos_Mexico %>% 
+  filter(TABAQUISMO == 1 | INTUBADO ==1, 
+         SEXO == 'Hombre' | SEXO == 'Mujer', 
+         DEFUNCION == 1, 
+         EDAD > EdadPromedioFallecidos)
+
+plot_ly(DecesosTabacoIntubado, 
+        x = ~SEXO, 
+        y = ~TABAQUISMO, 
+        type = 'bar', 
+        name = 'Tabaquismo') %>%
+  add_trace(y = ~INTUBADO, 
+            name = 'Intubado') %>% 
+  layout(yaxis = list(title = 'Conteo'), 
+         barmode = 'group')
+```
+
+<p> Con base en las anteriores gráficas, se observa que la tendencia de hombres muertos por COVID-19 que son fumadores y que requirieron intubación es mayor que en el caso de mujeres. A continuación, se procede al cálculo probabilístico, tomando como referencia solo aquellos personas que fellecieron por causa COVID-19, con el fin de estimar la probabilidad de entre los fallecimientos, cuál era la probabilidad de que el paciente fuése fumador, requirió intubación y tenía diagnóstico positivo en diabetes. </p>
+
+<h3>Obtención de probabilidades </h3>
+
+<p> Dado que estimar la probabilidad de los pacientes que fallecieron por COVID-19, se filtran los únicamente los paciente que fallecieron por el virus, entre los cuales se seleccionan aquellos pacientes que eran o no fumandores, que tenían o no un diagnóstico por diabestes y si requirieron o no intubaci´pn durante su instancia hospitalaria. Con esta información, se crean tablas de contigencia, mismas que facilitarán el cálculo probabilístico.</p> <br>
+
+<p> Preparación de los datos para la creación de las tablas de contingencias. </p>
+
+```{r}
+DefuncionCovid <- Positivos_Mexico %>% 
+  select(SEXO, 
+         TABAQUISMO, 
+         INTUBADO,
+         DIABETES,
+         DEFUNCION)
+
+DefuncionCovid <- DefuncionCovid %>% 
+  transform(TABAQUISMO = case_when(TABAQUISMO == 1 ~ "Sí",
+                                   TABAQUISMO == 2 ~ "No", 
+                                   T ~ ""), 
+            INTUBADO = case_when(INTUBADO == 1 ~ "Sí",
+                                 INTUBADO == 2 ~ "No",
+                                 T ~ ""), 
+            DIABETES = case_when(DIABETES == 1 ~ "Sí",
+                                 DIABETES == 2 ~ "No",
+                                 T ~ ""))
+
+DefuncionCovid <- DefuncionCovid %>% 
+  filter(SEXO == 'Mujer' | SEXO == 'Hombre',
+         TABAQUISMO == "Sí" | TABAQUISMO == "No",
+         INTUBADO == "Sí" | INTUBADO == "No",
+         DIABETES == "Sí" | DIABETES == "No",
+         DEFUNCION == 1)
+```
+
+<p> Se crea tabla de pacientes que son o no fumandores. </p>
+
+```{r}
+Genero <- as.factor(DefuncionCovid$SEXO)
+Fumador <- as.factor(DefuncionCovid$TABAQUISMO)
+
+TablaFumador <- ftable(xtabs(~Genero+Fumador, data = DefuncionCovid))
+TablaFumador <- cbind(TablaFumador, apply(TablaFumador, 1, sum)) 
+TablaFumador <- rbind(TablaFumador, apply(TablaFumador, 2, sum))
+colnames(TablaFumador) <- c('Fumador_Sí', 'Fumador_No', 'Total')
+rownames(TablaFumador)[3] <- c('Total')
+
+TablaFumador <- as.data.frame(TablaFumador)
+```
+<p> Se crea tabla para pacientes que requirieron o no intubación </p>
+
+```{r}
+Intubado <- as.factor(DefuncionCovid$INTUBADO)
+
+TablaIntubado <- ftable(xtabs(~Genero+Intubado, data = DefuncionCovid))
+TablaIntubado <- cbind(TablaIntubado, apply(TablaIntubado, 1, sum)) 
+TablaIntubado <- rbind(TablaIntubado, apply(TablaIntubado, 2, sum))
+colnames(TablaIntubado) <- c('Intubado_Sí', 'Intubado_No', 'Total')
+rownames(TablaIntubado)[3] <- c('Total')
+
+TablaIntubado <- as.data.frame(TablaIntubado)
+```
+
+<p> Tabla de pacientes con o sin diabetes. </p>
+
+```{r}
+Diabetes <- as.factor(DefuncionCovid$DIABETES)
+
+TablaDiabetes <- ftable(xtabs(~Genero+Diabetes, data = DefuncionCovid))
+TablaDiabetes <- cbind(TablaDiabetes, apply(TablaDiabetes, 1, sum)) 
+TablaDiabetes <- rbind(TablaDiabetes, apply(TablaDiabetes, 2, sum))
+colnames(TablaDiabetes) <- c('Diabetes: Sí', 'Diabetes: No', 'Total')
+rownames(TablaDiabetes)[3] <- c('Total')
+
+TablaDiabetes <- as.data.frame(TablaDiabetes)
+```
+
+<h4> Estimación de probabilidades </h4>
+
+<p> Se obtiene las probabilidades condicionales para los casos que se específican a continuación: </p>
+
+<ul> 
+  <li>Probabilidad ser fumador dado que es hombre y probabilidad de ser fumadora dado que es mujer. </li>
+  <li>Probabilidad de ser intubado dado que es hombre y probabilidad de ser intubado dado que es mujer. </li>
+  <li>Probabilidad de ser diabético dado que es hombre y probabilidad de ser diabética dado que es mujer. </li>
+</ul>
+
+<h5> Probabilidad de ser fumador dado que es hombre y probabilida de ser fumadora dado que es mujer</h5>
+
+```{r}
+TablaFumador
+```
+
+<p> Usando la fórmula de probabilidad condicional, </p>
+$$P(A|B) =\frac{P(A\cap B)}{P(A)},$$
+<p> y tomado los valores de la tabla de pacientes que fallecieron y eran fumandores, se tiene por un lado que, la probabilidad de ser hombre y fumador es igual a: </p>
+
+$$P(A\cap B) =\frac{2089}{3791} = 0.551 $$
+ 
+<p> Por otro lado, la probabilidad de ser hombre es igual a:</p>: 
+
+$$P(A) = \frac{2320}{3791} = 0.611 $$
+
+<p> Así, la probabilidad de ser fumador, dado que es hombres es igual a: <p>
+
+$$ P(A|B) = \frac{0.551}{0.611} = 0.90$$
+<p> Para el caso de las mujeres que fallecieron por COVID-19, la probabilidad de ser fumadoras es igual a: </p>
+
+$$P(A\cap B) = \frac{1409/3791}{1471/3791}= \frac{0.371}{0.388} = 0.95$$
+
+<h5> Probabilidad de ser intubado dado que es hombre y probabilidad de ser intubada dado que es mujer </h5>
+
+
+```{r}
+TablaIntubado
+```
+
+<p> La probabilidad de ser intubado dado que es hombre es igual a: </p>
+
+$$P(A|B)=\frac{1955/3791}{2320/3791}=\frac{0.515}{0.611}=0.84$$
+<p> La probabilidad de ser intubada dado que la paciente es mujer es igual a: </p>
+
+$$P(A|B)=\frac{1277/3791}{1471/3791}=\frac{0.336}{0.388}=0.86$$
+<h5> Probabilidad de ser diabético dado que es hombre y probabilidad de ser diabética dado que es mujer </h5>
+
+```{r}
+TablaDiabetes
+```
+<p>Probabiliad de ser diabético dado que es hombre es igual a, </p>
+
+$$P(A|B)=\frac{1476/3791}{2320/3791}=\frac{0.389}{0.611}=0.636 $$
+
+<p>Probabiliad de ser diabética dado que es mujer es igual a, </p>
+
+$$P(A|B)=\frac{859/3791}{1471/3791}=\frac{0.226}{0.388}=0.582$$
+<h4>Conclusiones</h4>
+
+<p> En la siguiente tabla se muestran las probabilidades obtenidas: </p><br>
+<div style="border: 1pt solid #bfb;">
+  <table class= "default" align="center">
+    <tr>
+      <th>Género/Condición</th>
+      <th>Fumador</th>
+      <th>Intubado</th>
+      <th>Diabetes</th>
+    </tr>
+    <tr>
+    <td>Hombre</td>
+      <td>90%</td>
+      <td>84%</td>
+      <td>63%</td>
+    </tr>
+    <tr>
+    <td>Mujer</td>
+      <td>95%</td>
+      <td>86%</td>
+      <td>58%</td>
+    </tr>
+  </table>
+</div><br>
+
+<p> Se puede observar que las probabilidades entre los pacientes fallecidos por COVID-19, es significativamente alta cuando eran fumadores y requierieron intubación, lo que plantea la pregunta de si existe o no una correlación entre el hecho de ser fumador y/o si requirió intubación con los paciente que fallecieron por causa COVID-19. Sin embargo, dicho análisis escapa de los objetivos de la presente investigación.</p>
